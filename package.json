@@ -39,6 +39,7 @@
     "webpack-node-externals": "1.7.2"
   },
   "dependencies": {
+    "@openzeppelin/contracts": "^4.7.3",
     "@truffle/hdwallet-provider": "^2.0.10",
     "bignumber.js": "8.0.2",
     "dotenv": "^16.0.2",
