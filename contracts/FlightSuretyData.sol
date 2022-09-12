@@ -10,16 +10,45 @@ contract FlightSuretyData {
     /********************************************************************************************/
     /*                                       DATA VARIABLES                                     */
     /********************************************************************************************/
-    address private contractOwner;                                      // Account used to deploy contract
-    bool private operational = true;                                    // Blocks all state changes throughout the contract if false
+
+    // Account used to deploy contract
+    address private contractOwner;                                      
+
+    // Blocks all state changes throughout the contract if false
+    bool private operational = true;                                    
+
+    // Only authorized contracts can perform write transactions
+    mapping(address => bool) private authorized;
+     
+    // Airlines information
+    struct Airline {
+        bool isRegistered;
+        bool isAccepted;
+        bool isMember;
+        uint256 balance;
+    }
+    mapping(address => Airline) private airlines;
+    uint8 numAirlines;
+    
+    // Flights information
+    struct Flight {
+        bool isRegistered;
+        uint8 statusCode;
+        uint256 updatedTimestamp;        
+        address airline;
+    }
+    mapping(bytes32 => Flight) private flights;
+    
+    // Insurances information
+    struct Insurance {
+        address passenger;
+        uint256 amount;
+    }
+    mapping(bytes32 => Insurance[]) private insurances;
 
     /********************************************************************************************/
     /*                                       EVENT DEFINITIONS                                  */
     /********************************************************************************************/
-    /**
-    * @dev Constructor
-    * The deploying account becomes contractOwner
-    */
     constructor () {
         contractOwner = msg.sender;
     }
@@ -27,87 +56,104 @@ contract FlightSuretyData {
     /********************************************************************************************/
     /*                                       FUNCTION MODIFIERS                                 */
     /********************************************************************************************/
-    /**
-    * @dev Modifier that requires the "operational" boolean variable to be "true"
-    *      This is used on all state changing functions to pause the contract in 
-    *      the event there is an issue that needs to be fixed
-    */
     modifier requireIsOperational() {
         require(operational, "Contract is currently not operational");
-        _;  // All modifiers require an "_" which indicates where the function body will be added
+        _;
     }
 
-    /**
-    * @dev Modifier that requires the "ContractOwner" account to be the function caller
-    */
     modifier requireContractOwner() {
-        require(msg.sender == contractOwner, "Caller is not contract owner");
+        require(tx.origin == contractOwner, "Caller is not contract owner");
+        _;
+    }
+
+    modifier requireAuthorizedContract() {
+        require(authorized[msg.sender] == true, "Not an authorized contract call");
         _;
     }
 
     /********************************************************************************************/
     /*                                       UTILITY FUNCTIONS                                  */
     /********************************************************************************************/
-    /**
-    * @dev Get operating status of contract
-    *
-    * @return A bool that is the current operating status
-    */      
     function isOperational() public view returns(bool)  {
         return operational;
     }
 
-    /**
-    * @dev Sets contract operations on/off
-    * When operational mode is disabled, all write transactions except for this one will fail
-    */    
     function setOperatingStatus (bool mode) external requireContractOwner {
         operational = mode;
+    }
+
+    function isAuthorizedContract(address contractAddress) external view returns(bool) {
+        return authorized[contractAddress];
+    }
+
+    function setAuthorizedContract(address contractAddress, bool status) external requireContractOwner {
+        authorized[contractAddress] = status;
+    }
+
+    function getNumAirlines () external view returns (uint8) {
+        return numAirlines;
+    }
+
+    function isMemberAirline() external view returns(bool){
+        return airlines[msg.sender].isMember;
+    }
+
+    function getAirlineInfo(address account) external view returns (bool, bool, bool, uint256) {
+        require(airlines[account].isRegistered, "Airlines is not registered");
+        Airline memory aux = airlines[account];
+        return (aux.isRegistered, aux.isAccepted, aux.isMember, aux.balance);
     }
 
     /********************************************************************************************/
     /*                                     SMART CONTRACT FUNCTIONS                             */
     /********************************************************************************************/
-   /**
-    * @dev Add an airline to the registration queue can only be called from FlightSuretyApp contract
-    */   
-    function registerAirline () external pure {
+    function registerFirstAirline (address account) external requireIsOperational requireContractOwner {
+        require(numAirlines == 0, "Only first airline can be registered here");
+        airlines[account] = Airline(true, true, false, 0);
+        numAirlines = 1;
+    }
+
+    function registerAirline (address account) external requireIsOperational requireAuthorizedContract {
+        require(airlines[account].isRegistered == false, "Airline already registered");
+        airlines[account] = Airline(true, false, false, 0);
+        numAirlines++;
+    }
+
+    function acceptAirline (address account) external requireIsOperational requireAuthorizedContract {
+        require(airlines[account].isRegistered, "Airline should be registered first");
+        airlines[account].isAccepted = true;
+    }
+
+    function registerFlight (bytes32 flight, uint8 status) external requireIsOperational requireAuthorizedContract {
+        require(flights[flight].isRegistered == false, "Flight already registered");
+        flights[flight] = Flight(true, status, block.timestamp, msg.sender);
     }
 
    /**
     * @dev Buy insurance for a flight
     */   
-    function buy () external payable { 
+    function buy () external payable requireIsOperational requireAuthorizedContract {
     }
 
    /**
     *  @dev Credits payouts to insurees
     */
-    function creditInsurees () external pure {
-    }
-    
+    function creditInsurees () external requireIsOperational requireAuthorizedContract {
+    }  
 
    /**
     *  @dev Transfers eligible payout funds to insuree
     */
-    function pay () external pure {
+    function pay () external requireIsOperational requireAuthorizedContract {
     }
 
    /**
     * @dev Initial funding for the insurance. Unless there are too many delayed flights resulting in insurance payouts, the contract should be self-sustaining
     */   
-    function fund () public payable {
+    function fund () public payable requireIsOperational requireAuthorizedContract {
     }
 
     function getFlightKey (address airline, string memory flight, uint256 timestamp) pure internal returns(bytes32) {
         return keccak256(abi.encodePacked(airline, flight, timestamp));
     }
-
-    /**
-    * @dev Fallback function for funding smart contract.
-    */
-    receive() external payable {
-        fund();
-    }
 }
-

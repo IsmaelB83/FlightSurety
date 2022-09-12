@@ -2,6 +2,7 @@
 pragma solidity ^0.8.16;
 
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "./FlightSuretyData.sol";
 
 /************************************************** */
 /* FlightSurety Smart Contract                      */
@@ -22,72 +23,101 @@ contract FlightSuretyApp {
     uint8 private constant STATUS_CODE_LATE_TECHNICAL = 40;
     uint8 private constant STATUS_CODE_LATE_OTHER = 50;
 
-    address private contractOwner;          // Account used to deploy contract
+    // Account used to deploy contract
+    address private contractOwner;
 
-    struct Flight {
-        bool isRegistered;
-        uint8 statusCode;
-        uint256 updatedTimestamp;        
-        address airline;
-    }
-    mapping(bytes32 => Flight) private flights;
+    // Data smart contract
+    FlightSuretyData flightSuretyData;
 
+    // Airlines votes
+    mapping(address => address[]) airlinesVotes;
  
     /********************************************************************************************/
     /*                                       FUNCTION MODIFIERS                                 */
     /********************************************************************************************/
-    /**
-    * @dev Modifier that requires the "operational" boolean variable to be "true"
-    *      This is used on all state changing functions to pause the contract in 
-    *      the event there is an issue that needs to be fixed
-    */
     modifier requireIsOperational() {
-         // Modify to call data contract's status
-        require(true, "Contract is currently not operational");  
-        _;  // All modifiers require an "_" which indicates where the function body will be added
+        require(flightSuretyData.isOperational() == true, "Contract is currently not operational");  
+        _;
     }
 
-    /**
-    * @dev Modifier that requires the "ContractOwner" account to be the function caller
-    */
     modifier requireContractOwner() {
         require(msg.sender == contractOwner, "Caller is not contract owner");
+        _;
+    }
+
+    modifier requireMemberAirline() {
+        require(flightSuretyData.isMemberAirline(), "Caller should be a member airline");
         _;
     }
 
     /********************************************************************************************/
     /*                                       CONSTRUCTOR                                        */
     /********************************************************************************************/
-    /**
-    * @dev Contract constructor
-    *
-    */
-    constructor () {
+    constructor (address dataContract, address firstAirline) {
         contractOwner = msg.sender;
+        flightSuretyData = FlightSuretyData(dataContract);
+        // If data has 0 airlines register the founder airline at this time
+        if (flightSuretyData.getNumAirlines() == 0) {
+            flightSuretyData.registerFirstAirline(firstAirline);
+        }
     }
 
     /********************************************************************************************/
     /*                                       UTILITY FUNCTIONS                                  */
     /********************************************************************************************/
-    function isOperational() public pure returns(bool) {
-        return true;  // Modify to call data contract's status
+    function isOperational() public view returns(bool) {
+        return flightSuretyData.isOperational();
     }
 
     /********************************************************************************************/
     /*                                     SMART CONTRACT FUNCTIONS                             */
     /********************************************************************************************/
-   /**
-    * @dev Add an airline to the registration queue
-    *
-    */   
-    function registerAirline() external pure returns(bool success, uint256 votes) {
-        return (success, 0);
+    function registerAirline(address account) external returns(bool success, uint256 votes) {
+        // The registration and voting criteria (50%) should be located in the APP smart contract not in the data contract
+        // this is because the criteria to accept an airline to join the group could change in the future (business rules) and
+        // therefore it's better not to mixed this business rules with the data smart contract.
+        if (flightSuretyData.getNumAirlines() < 5) {
+            require(msg.sender == contractOwner, "First four airlines are registered by the contract owner aka first airline");
+            flightSuretyData.registerAirline(account);
+            flightSuretyData.acceptAirline(account);
+            return (true, 1);
+        } else {
+            require(msg.sender == account, "Only the founder airlines was able to register other airlines in the beggining");
+            flightSuretyData.registerAirline(msg.sender);
+            airlinesVotes[msg.sender] = new address[](0);
+            return (true, 0);
+        }
+    }
+
+    function voteAirline(address account) external requireMemberAirline {
+        // Voting is only required after the fifth ailines registered
+        uint8 numAirlines = flightSuretyData.getNumAirlines();
+        require(numAirlines > 4, "There need to be at least 5 airlines to vote for join");
+        // Only waiting airlines to join can be voted in
+        (bool isRegistered, bool isAccepted, bool isMember, uint256 balance) = flightSuretyData.getAirlineInfo(account);
+        require(isRegistered, "Airline not registered");
+        require(!isAccepted, "Airline is already accepted");
+        // One airline can vote just once for another airline to join
+        bool isDuplicate = false;
+        for (uint256 i = 0; i < airlinesVotes[account].length; i++) {
+            if ( airlinesVotes[account][i] == msg.sender) {
+                isDuplicate = true;
+                break;
+            }
+        }
+        require(isDuplicate == false, "An airline can vote just once for another airline to join");
+        // Vote and check 50%
+        airlinesVotes[account].push(msg.sender);
+        if (airlinesVotes[account].length > SafeMath.div(numAirlines, 2)) {
+            flightSuretyData.acceptAirline(account);
+        }
     }
 
    /**
     * @dev Register a future flight for insuring.
     */  
-    function registerFlight () external pure {
+    function registerFlight (bytes32 flight) external requireMemberAirline {
+        flightSuretyData.registerFlight(flight, STATUS_CODE_UNKNOWN);
     }
     
    /**
