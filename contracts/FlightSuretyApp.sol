@@ -46,7 +46,7 @@ contract FlightSuretyApp {
     }
 
     modifier requireMemberAirline() {
-        require(flightSuretyData.isMemberAirline(), "Caller should be a member airline");
+        require(flightSuretyData.isMemberAirline(msg.sender), "Caller should be a member airline");
         _;
     }
 
@@ -76,8 +76,9 @@ contract FlightSuretyApp {
         // The registration and voting criteria (50%) should be located in the APP smart contract not in the data contract
         // this is because the criteria to accept an airline to join the group could change in the future (business rules) and
         // therefore it's better not to mixed this business rules with the data smart contract.
-        if (flightSuretyData.getNumAirlines() < 5) {
-            require(msg.sender == contractOwner, "First four airlines are registered by the contract owner aka first airline");
+        if (flightSuretyData.getNumAirlines() < 4) {
+            require(msg.sender == flightSuretyData.getFirstAirline(), "First four airlines should be registered by the founder airline");
+            require(flightSuretyData.isMemberAirline(msg.sender), "First airlines should provide funding first");
             flightSuretyData.registerAirline(account);
             flightSuretyData.acceptAirline(account);
             return (true, 1);
@@ -91,12 +92,11 @@ contract FlightSuretyApp {
 
     function voteAirline(address account) external requireMemberAirline {
         // Voting is only required after the fifth ailines registered
-        uint8 numAirlines = flightSuretyData.getNumAirlines();
-        require(numAirlines > 4, "There need to be at least 5 airlines to vote for join");
+        uint256 numAirlines = flightSuretyData.getNumAirlines();
+        require(numAirlines >= 4, "There need to be at least 4 airlines to vote for join");
         // Only waiting airlines to join can be voted in
-        (bool isRegistered, bool isAccepted, bool isMember, uint256 balance) = flightSuretyData.getAirlineInfo(account);
-        require(isRegistered, "Airline not registered");
-        require(!isAccepted, "Airline is already accepted");
+        require(flightSuretyData.isRegisteredAirline(account), "Airline sould be registered first");
+        require(!flightSuretyData.isAcceptedAirline(account), "Airline shouldnt be accepted already");
         // One airline can vote just once for another airline to join
         bool isDuplicate = false;
         for (uint256 i = 0; i < airlinesVotes[account].length; i++) {
@@ -108,7 +108,7 @@ contract FlightSuretyApp {
         require(isDuplicate == false, "An airline can vote just once for another airline to join");
         // Vote and check 50%
         airlinesVotes[account].push(msg.sender);
-        if (airlinesVotes[account].length > SafeMath.div(numAirlines, 2)) {
+        if (airlinesVotes[account].length >= (numAirlines / 2)) {
             flightSuretyData.acceptAirline(account);
         }
     }

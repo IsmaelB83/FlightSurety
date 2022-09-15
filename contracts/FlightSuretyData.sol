@@ -10,7 +10,6 @@ contract FlightSuretyData {
     /********************************************************************************************/
     /*                                       DATA VARIABLES                                     */
     /********************************************************************************************/
-
     // Account used to deploy contract
     address private contractOwner;                                      
 
@@ -28,7 +27,7 @@ contract FlightSuretyData {
         uint256 balance;
     }
     mapping(address => Airline) private airlines;
-    uint8 numAirlines;
+    address[] private airlinesArray = new address[](0);
     
     // Flights information
     struct Flight {
@@ -38,6 +37,7 @@ contract FlightSuretyData {
         address airline;
     }
     mapping(bytes32 => Flight) private flights;
+    bytes32[] private flightsArray = new bytes32[](0);
     
     // Insurances information
     struct Insurance {
@@ -45,6 +45,7 @@ contract FlightSuretyData {
         uint256 amount;
     }
     mapping(bytes32 => Insurance[]) private insurances;
+    bytes32[] private insurancesArray = new bytes32[](0);
 
     /********************************************************************************************/
     /*                                       EVENT DEFINITIONS                                  */
@@ -71,6 +72,17 @@ contract FlightSuretyData {
         _;
     }
 
+    modifier requireAcceptedAirline(){
+        require(airlines[msg.sender].isAccepted, "Airline not yet accepted");
+        _;
+    }
+
+    modifier requireMemberAirline(){
+        require(airlines[msg.sender].isMember, "Airline not yet provided funding");
+        _;
+    }
+
+
     /********************************************************************************************/
     /*                                       UTILITY FUNCTIONS                                  */
     /********************************************************************************************/
@@ -78,8 +90,8 @@ contract FlightSuretyData {
         return operational;
     }
 
-    function setOperatingStatus (bool mode) external requireContractOwner {
-        operational = mode;
+    function setOperatingStatus (bool status) external requireContractOwner {
+        operational = status;
     }
 
     function isAuthorizedContract(address contractAddress) external view returns(bool) {
@@ -90,12 +102,30 @@ contract FlightSuretyData {
         authorized[contractAddress] = status;
     }
 
-    function getNumAirlines () external view returns (uint8) {
-        return numAirlines;
+    function getFirstAirline() external view returns(address) {
+        return airlinesArray[0];
     }
 
-    function isMemberAirline() external view returns(bool){
-        return airlines[msg.sender].isMember;
+    function getNumAirlines () external view returns (uint256) {
+        return airlinesArray.length;
+    }
+
+    function isRegisteredAirline(address account) external view returns(bool){
+        return airlines[account].isRegistered;
+    }
+
+    function isAcceptedAirline(address account) external view returns(bool){
+        return airlines[account].isAccepted;
+    }
+
+
+    function isMemberAirline(address account) external view returns(bool){
+        return airlines[account].isMember;
+    }
+
+    function getAirlineBalance(address account) external view returns (uint256) {
+        require(airlines[account].isRegistered, "Airlines is not registered");
+        return (airlines[account].balance);
     }
 
     function getAirlineInfo(address account) external view returns (bool, bool, bool, uint256) {
@@ -104,42 +134,53 @@ contract FlightSuretyData {
         return (aux.isRegistered, aux.isAccepted, aux.isMember, aux.balance);
     }
 
+    function getAirlines() external view returns (address[] memory) {
+        return airlinesArray;
+    }
+
     /********************************************************************************************/
-    /*                                     SMART CONTRACT FUNCTIONS                             */
+    /*          SMART CONTRACT FUNCTIONS CAN BE CALLED ONLY FROM APP CONTRACT                   */
     /********************************************************************************************/
     function registerFirstAirline (address account) external requireIsOperational requireContractOwner {
-        require(numAirlines == 0, "Only first airline can be registered here");
+        require(airlinesArray.length == 0, "Only first airline can be registered here");
         airlines[account] = Airline(true, true, false, 0);
-        numAirlines = 1;
+        airlinesArray.push(account);
     }
 
     function registerAirline (address account) external requireIsOperational requireAuthorizedContract {
-        require(airlines[account].isRegistered == false, "Airline already registered");
+        require(!airlines[account].isRegistered, "Airline already registered");
         airlines[account] = Airline(true, false, false, 0);
-        numAirlines++;
     }
 
     function acceptAirline (address account) external requireIsOperational requireAuthorizedContract {
         require(airlines[account].isRegistered, "Airline should be registered first");
         airlines[account].isAccepted = true;
+        airlinesArray.push(account);
     }
 
-    function registerFlight (bytes32 flight, uint8 status) external requireIsOperational requireAuthorizedContract {
+    /********************************************************************************************/
+    /*               SMART CONTRACT FUNCTIONS THAT CAN BE CALLED DIRECTLY FROM EOA              */
+    /********************************************************************************************/
+    function registerFlight (bytes32 flight, uint8 status) external requireIsOperational requireMemberAirline {
         require(flights[flight].isRegistered == false, "Flight already registered");
         flights[flight] = Flight(true, status, block.timestamp, msg.sender);
+        flightsArray.push(flight);
     }
 
    /**
     * @dev Buy insurance for a flight
     */   
-    function buy () external payable requireIsOperational requireAuthorizedContract {
+    function buy (bytes32 flight) external payable requireIsOperational {
+        require(flights[flight].isRegistered == true, "Flight not already registered");
+        require(msg.value < 1 ether, "Insurance should be up to 1 ether");
+        insurances[flight].push(Insurance(msg.sender, msg.value));
     }
 
    /**
     *  @dev Credits payouts to insurees
     */
     function creditInsurees () external requireIsOperational requireAuthorizedContract {
-    }  
+    }
 
    /**
     *  @dev Transfers eligible payout funds to insuree
@@ -150,7 +191,10 @@ contract FlightSuretyData {
    /**
     * @dev Initial funding for the insurance. Unless there are too many delayed flights resulting in insurance payouts, the contract should be self-sustaining
     */   
-    function fund () public payable requireIsOperational requireAuthorizedContract {
+    function fund () public payable requireIsOperational requireAcceptedAirline {
+        require(airlines[msg.sender].balance == 0, "Airline already provided funding");
+        airlines[msg.sender].balance = msg.value;
+        airlines[msg.sender].isMember = true;
     }
 
     function getFlightKey (address airline, string memory flight, uint256 timestamp) pure internal returns(bytes32) {
