@@ -36,16 +36,18 @@ contract FlightSuretyData {
         uint256 updatedTimestamp;        
         address airline;
     }
-    mapping(bytes32 => Flight) private flights;
-    bytes32[] private flightsArray = new bytes32[](0);
+    mapping(string => Flight) private flights;
+    string[] private flightsArray = new string[](0);
     
     // Insurances information
     struct Insurance {
         address passenger;
         uint256 amount;
     }
-    mapping(bytes32 => Insurance[]) private insurances;
-    bytes32[] private insurancesArray = new bytes32[](0);
+    mapping(string => Insurance[]) private insurances;
+
+    // Passengers balances
+    mapping(address => uint256) private balances;
 
     /********************************************************************************************/
     /*                                       EVENT DEFINITIONS                                  */
@@ -138,6 +140,29 @@ contract FlightSuretyData {
         return airlinesArray;
     }
 
+    function getFlightInfo(string memory flight) external view returns (uint8 statusCode, uint256 updatedTimestamp, address airline) {
+        //require(flights[flight].isRegistered == true, "Flight not registered");
+        Flight memory aux = flights[flight];
+        return (aux.statusCode, aux.updatedTimestamp, aux.airline);
+    }
+
+    function getFlights() external view returns (string[] memory) {
+        return flightsArray;
+    }
+
+    function getInsuranceInfo(string memory flight, address passenger) external view returns (uint256 amount) {
+        Insurance[] memory aux = insurances[flight];
+        for (uint256 i = 0; i < aux.length; i++) {
+            if ( aux[i].passenger == passenger) {
+                return aux[i].amount;
+            }
+        }
+    }
+
+    function getInsurances(string memory flight) external view returns (Insurance[] memory) {
+        return insurances[flight];
+    }
+
     /********************************************************************************************/
     /*          SMART CONTRACT FUNCTIONS CAN BE CALLED ONLY FROM APP CONTRACT                   */
     /********************************************************************************************/
@@ -158,45 +183,38 @@ contract FlightSuretyData {
         airlinesArray.push(account);
     }
 
-    /********************************************************************************************/
-    /*               SMART CONTRACT FUNCTIONS THAT CAN BE CALLED DIRECTLY FROM EOA              */
-    /********************************************************************************************/
-    function registerFlight (bytes32 flight, uint8 status) external requireIsOperational requireMemberAirline {
+    function registerFlight (address account, string memory flight, uint8 status) external requireIsOperational requireAuthorizedContract {
         require(flights[flight].isRegistered == false, "Flight already registered");
-        flights[flight] = Flight(true, status, block.timestamp, msg.sender);
+        flights[flight] = Flight(true, status, block.timestamp, account);
         flightsArray.push(flight);
     }
 
-   /**
-    * @dev Buy insurance for a flight
-    */   
-    function buy (bytes32 flight) external payable requireIsOperational {
-        require(flights[flight].isRegistered == true, "Flight not already registered");
-        require(msg.value < 1 ether, "Insurance should be up to 1 ether");
-        insurances[flight].push(Insurance(msg.sender, msg.value));
-    }
-
-   /**
-    *  @dev Credits payouts to insurees
-    */
-    function creditInsurees () external requireIsOperational requireAuthorizedContract {
-    }
-
-   /**
-    *  @dev Transfers eligible payout funds to insuree
-    */
-    function pay () external requireIsOperational requireAuthorizedContract {
-    }
-
-   /**
-    * @dev Initial funding for the insurance. Unless there are too many delayed flights resulting in insurance payouts, the contract should be self-sustaining
-    */   
+    /********************************************************************************************/
+    /*               SMART CONTRACT FUNCTIONS THAT CAN BE CALLED DIRECTLY FROM EOA              */
+    /********************************************************************************************/
     function fund () public payable requireIsOperational requireAcceptedAirline {
         require(airlines[msg.sender].balance == 0, "Airline already provided funding");
         airlines[msg.sender].balance = msg.value;
         airlines[msg.sender].isMember = true;
     }
 
+    function buy (string memory flight) external payable requireIsOperational {
+        require(msg.value > 0 && msg.value <= 1 ether, "Min insurance is 1 wei and max insurance is 1 ether");
+        require(flights[flight].isRegistered == true, "Flight not registered");
+        insurances[flight].push(Insurance(msg.sender, msg.value));
+    }
+
+    function pay () external requireIsOperational {
+        
+    }
+
+    function creditInsurees () external requireIsOperational {
+
+    }
+
+    /********************************************************************************************/
+    /*                  AUXILIARY METHODS INTERNAL TO SMART CONTRACT                            */
+    /********************************************************************************************/
     function getFlightKey (address airline, string memory flight, uint256 timestamp) pure internal returns(bytes32) {
         return keccak256(abi.encodePacked(airline, flight, timestamp));
     }

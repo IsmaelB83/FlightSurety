@@ -74,8 +74,8 @@ contract FlightSuretyApp {
     /********************************************************************************************/
     function registerAirline(address account) external returns(bool success, uint256 votes) {
         // The registration and voting criteria (50%) should be located in the APP smart contract not in the data contract
-        // this is because the criteria to accept an airline to join the group could change in the future (business rules) and
-        // therefore it's better not to mixed this business rules with the data smart contract.
+        // because the criteria to accept an airline to join the group may change in the future (business rules), and
+        // therefore it is better not to mixed this business rules with the data smart contract.
         if (flightSuretyData.getNumAirlines() < 4) {
             require(msg.sender == flightSuretyData.getFirstAirline(), "First four airlines should be registered by the founder airline");
             require(flightSuretyData.isMemberAirline(msg.sender), "First airlines should provide funding first");
@@ -113,13 +113,10 @@ contract FlightSuretyApp {
         }
     }
 
-   /**
-    * @dev Register a future flight for insuring.
-    */  
-    function registerFlight (bytes32 flight) external requireMemberAirline {
-        flightSuretyData.registerFlight(flight, STATUS_CODE_UNKNOWN);
+    function registerFlight (string memory flight) external requireMemberAirline {
+        flightSuretyData.registerFlight(msg.sender, flight, STATUS_CODE_UNKNOWN);
     }
-    
+
    /**
     * @dev Called after oracle has updated flight status
     */  
