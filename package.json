@@ -12,7 +12,7 @@
     "dapp": "webpack-dev-server --mode development --config webpack.config.dapp.js",
     "dapp:prod": "webpack --mode production  --config webpack.config.dapp.js",
     "server": "rm -rf ./build/server && webpack --config webpack.config.server.js",
-    "ganache": "ganache-cli -m 'shit supply shark amount et item harsh afraid congress destroy talent rat'"
+    "ganache": "ganache-cli --accounts=50 --mnemonic 'shit supply shark amount et item harsh afraid congress destroy talent rat'"
   },
   "devDependencies": {
     "@babel/cli": "^7.0.0-beta.46",
@@ -46,6 +46,7 @@
     "express": "4.16.4",
     "openzeppelin-solidity": "^1.10.0",
     "truffle": "5.0.2",
+    "truffle-assertions": "^0.9.2",
     "truffle-hdwallet-provider": "^1.0.17",
     "web3": "^3.0.0-rc.5"
   }

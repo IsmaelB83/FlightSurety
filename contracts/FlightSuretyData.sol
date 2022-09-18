@@ -23,7 +23,7 @@ contract FlightSuretyData {
     struct Airline {
         bool isRegistered;
         bool isAccepted;
-        bool isMember;
+        bool isFunded;
         uint256 balance;
     }
     mapping(address => Airline) private airlines;
@@ -32,19 +32,20 @@ contract FlightSuretyData {
     // Flights information
     struct Flight {
         bool isRegistered;
+        string flight;
         uint8 statusCode;
         uint256 updatedTimestamp;        
         address airline;
     }
-    mapping(string => Flight) private flights;
-    string[] private flightsArray = new string[](0);
+    mapping(bytes32 => Flight) private flights;
+    bytes32[] private flightsArray = new bytes32[](0);
     
     // Insurances information
     struct Insurance {
         address passenger;
         uint256 amount;
     }
-    mapping(string => Insurance[]) private insurances;
+    mapping(bytes32 => Insurance[]) private insurances;
 
     // Passengers balances
     mapping(address => uint256) private balances;
@@ -79,8 +80,8 @@ contract FlightSuretyData {
         _;
     }
 
-    modifier requireMemberAirline(){
-        require(airlines[msg.sender].isMember, "Airline not yet provided funding");
+    modifier requireFundedAirline(address account){
+        require(airlines[account].isFunded, "Airline not yet funded");
         _;
     }
 
@@ -121,8 +122,8 @@ contract FlightSuretyData {
     }
 
 
-    function isMemberAirline(address account) external view returns(bool){
-        return airlines[account].isMember;
+    function isFundedAirline(address account) external view returns(bool){
+        return airlines[account].isFunded;
     }
 
     function getAirlineBalance(address account) external view returns (uint256) {
@@ -133,24 +134,37 @@ contract FlightSuretyData {
     function getAirlineInfo(address account) external view returns (bool, bool, bool, uint256) {
         require(airlines[account].isRegistered, "Airlines is not registered");
         Airline memory aux = airlines[account];
-        return (aux.isRegistered, aux.isAccepted, aux.isMember, aux.balance);
+        return (aux.isRegistered, aux.isAccepted, aux.isFunded, aux.balance);
     }
 
     function getAirlines() external view returns (address[] memory) {
         return airlinesArray;
     }
 
-    function getFlightInfo(string memory flight) external view returns (uint8 statusCode, uint256 updatedTimestamp, address airline) {
-        //require(flights[flight].isRegistered == true, "Flight not registered");
-        Flight memory aux = flights[flight];
-        return (aux.statusCode, aux.updatedTimestamp, aux.airline);
+    function getFlightInfoByKey(bytes32 key) external view returns (bytes32 flightKey, string memory flightName, uint8 statusCode, uint256 updatedTimestamp, address flightAirline) {
+        require(flights[key].isRegistered == true, "Flight not registered");
+        Flight memory aux = flights[key];
+        return (key, aux.flight, aux.statusCode, aux.updatedTimestamp, aux.airline);
     }
 
-    function getFlights() external view returns (string[] memory) {
+    function getFlightInfo(address airline, string memory flight, uint256 timestamp) external view returns (bytes32 flightKey, string memory flightName, uint8 statusCode, uint256 updatedTimestamp, address flightAirline) {
+        bytes32 key = getFlightKey(airline, flight, timestamp);
+        require(flights[key].isRegistered == true, "Flight not registered");
+        Flight memory aux = flights[key];
+        return (key, aux.flight, aux.statusCode, aux.updatedTimestamp, aux.airline);
+    }
+
+    function getFlightStatus(address airline, string memory flight, uint256 timestamp) external view returns (uint8 statusCode) {
+        bytes32 key = getFlightKey(airline, flight, timestamp);
+        require(flights[key].isRegistered == true, "Flight not registered");
+        return (flights[key].statusCode);
+    }
+
+    function getFlights() external view returns (bytes32[] memory) {
         return flightsArray;
     }
 
-    function getInsuranceInfo(string memory flight, address passenger) external view returns (uint256 amount) {
+    function getInsuranceInfo(bytes32 flight, address passenger) external view returns (uint256 amount) {
         Insurance[] memory aux = insurances[flight];
         for (uint256 i = 0; i < aux.length; i++) {
             if ( aux[i].passenger == passenger) {
@@ -159,8 +173,12 @@ contract FlightSuretyData {
         }
     }
 
-    function getInsurances(string memory flight) external view returns (Insurance[] memory) {
+    function getInsurances(bytes32 flight) external view returns (Insurance[] memory) {
         return insurances[flight];
+    }
+
+    function getPassengerBalance() external view returns(uint256) {
+        return balances[msg.sender];
     }
 
     /********************************************************************************************/
@@ -183,33 +201,53 @@ contract FlightSuretyData {
         airlinesArray.push(account);
     }
 
-    function registerFlight (address account, string memory flight, uint8 status) external requireIsOperational requireAuthorizedContract {
-        require(flights[flight].isRegistered == false, "Flight already registered");
-        flights[flight] = Flight(true, status, block.timestamp, account);
-        flightsArray.push(flight);
+    function registerFlight (address airline, string memory flight, uint256 timestamp, uint8 status) external requireIsOperational requireAuthorizedContract requireFundedAirline(airline) {
+        bytes32 key = getFlightKey(airline, flight, timestamp);
+        flights[key] = Flight(true, flight, status, timestamp, airline);
+        flightsArray.push(key);
     }
 
+    function updateFlight (address airline, bytes32 flight, uint8 status) external requireIsOperational requireAuthorizedContract requireFundedAirline(airline) {
+        require(flights[flight].isRegistered == true, "Flight is not registered");
+        require(flights[flight].airline == airline, "Only airline owner can update flight");
+        flights[flight].statusCode = status;
+        flights[flight].updatedTimestamp = block.timestamp;
+
+    }
+    
+    function creditInsurees (bytes32 flight) external requireIsOperational requireAuthorizedContract {
+        Insurance[] memory aux = insurances[flight];
+        for (uint256 i = 0; i < aux.length; i++) {
+            address passenger = aux[i].passenger;
+            uint256 amount = aux[i].amount;
+            uint256 balance = balances[passenger];
+            uint256 payment = SafeMath.div(SafeMath.mul(amount, 150), 100);
+            aux[i].amount = 0;
+            balances[passenger] = SafeMath.add(balance, payment);
+        }
+    }
     /********************************************************************************************/
     /*               SMART CONTRACT FUNCTIONS THAT CAN BE CALLED DIRECTLY FROM EOA              */
     /********************************************************************************************/
     function fund () public payable requireIsOperational requireAcceptedAirline {
-        require(airlines[msg.sender].balance == 0, "Airline already provided funding");
+        require(msg.value == 10 ether, "10 ether required for funding");
+        require(airlines[msg.sender].isFunded == false, "Airline already funded");
         airlines[msg.sender].balance = msg.value;
-        airlines[msg.sender].isMember = true;
+        airlines[msg.sender].isFunded = true;
     }
 
-    function buy (string memory flight) external payable requireIsOperational {
+    function buy (bytes32 flight) external payable requireIsOperational {
         require(msg.value > 0 && msg.value <= 1 ether, "Min insurance is 1 wei and max insurance is 1 ether");
         require(flights[flight].isRegistered == true, "Flight not registered");
         insurances[flight].push(Insurance(msg.sender, msg.value));
     }
 
     function pay () external requireIsOperational {
-        
-    }
-
-    function creditInsurees () external requireIsOperational {
-
+        require(msg.sender == tx.origin, "Contracts not allowed");
+        require(balances[msg.sender] > 0, "Passenger does not have balance");
+        uint256 withdraw = balances[msg.sender];
+        balances[msg.sender] = 0;
+        payable(msg.sender).transfer(withdraw);
     }
 
     /********************************************************************************************/
