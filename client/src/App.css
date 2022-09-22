@@ -1,0 +1,9 @@
+body {
+    background-image: url('./static/flight.jpg');
+    background-repeat: no-repeat;
+    background-size: cover;
+}
+
+.mainContainer {
+    padding-top: 60px;
+}

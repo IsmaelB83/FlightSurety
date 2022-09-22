@@ -1,0 +1,23 @@
+{
+    "name": "flightsurety",
+    "version": "1.0.0",
+    "description": "",
+    "directories": {
+        "test": "test"
+    },
+    "repository": "https://github.com/IsmaelB83/FlightSurety",
+    "main": "truffle-config.js",
+    "dependencies": {
+        "@openzeppelin/contracts": "^4.7.3",
+        "@truffle/hdwallet-provider": "^2.0.10",
+        "dotenv": "^16.0.1",
+        "truffle-assertions": "^0.9.2",
+        "truffle-hdwallet-provider": "^1.0.17"
+    },
+    "scripts": {
+        "ganache": "ganache-cli --accounts=50 --mnemonic 'shit supply shark amount et item harsh afraid congress destroy talent rat'",
+        "test": "truffle test"
+    },
+    "author": "Ismael Bernal",
+    "license": "MIT"
+}
